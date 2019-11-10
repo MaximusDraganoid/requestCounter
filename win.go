@@ -12,30 +12,42 @@ type infoStrore struct {
 	requestInfo string
 }
 
-var mu sync.Mutex
-var Output []infoStrore
+type SliceOfInfoStore struct {
+	slice []infoStrore
+	mu    sync.Mutex
+}
+
+func (p *SliceOfInfoStore) Add(toAdd infoStrore) {
+	p.mu.Lock()
+	p.slice = append(p.slice, toAdd)
+	p.mu.Unlock()
+}
+
+func (p *SliceOfInfoStore) printOutput(resp http.ResponseWriter) {
+	p.mu.Lock()
+	for key := range p.slice {
+		fmt.Fprintf(resp, "%v \t%v \t%v\n", key, Output.slice[key].currentTime, Output.slice[key].requestInfo)
+	}
+	p.mu.Unlock()
+}
+
+func (p *SliceOfInfoStore) CleanOutput() {
+	p.mu.Lock()
+	for len(Output.slice) != 0 {
+		Output.slice = Output.slice[0 : len(Output.slice)-1]
+	}
+	p.mu.Unlock()
+}
+
+var Output SliceOfInfoStore
 
 func handler(resp http.ResponseWriter, req *http.Request) {
-	mu.Lock()
 	//time.RFC3339
 	//"2006-01-02T15:04:01Z"
 	t := time.Now()
 	newTime := t.Format("2006-01-02T15:04:05Z")
-	Output = append(Output, infoStrore{currentTime: newTime, requestInfo: req.RemoteAddr})
-	printOutput(resp)
-	mu.Unlock()
-}
-
-func printOutput(resp http.ResponseWriter) {
-	for key := range Output {
-		fmt.Fprintf(resp, "%v \t%v \t%v\n", key, Output[key].currentTime, Output[key].requestInfo)
-	}
-}
-
-func CleanOutput() {
-	for len(Output) != 0 {
-		Output = Output[0 : len(Output)-1]
-	}
+	Output.Add(infoStrore{currentTime: newTime, requestInfo: req.RemoteAddr})
+	Output.printOutput(resp)
 }
 
 func main() {
@@ -49,9 +61,7 @@ func main() {
 				waitTime = 60*time.Second - waitTime
 			}
 			<-time.After(waitTime)
-			mu.Lock()
-			CleanOutput()
-			mu.Unlock()
+			Output.CleanOutput()
 		}
 	}()
 	http.HandleFunc("/", handler)
